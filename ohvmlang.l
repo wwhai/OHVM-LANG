@@ -1,30 +1,24 @@
 %{
-#define YYSTYPE char *
-#include "y.tab.h"
-int cur_line = 1;
-void yyerror(const char *msg);
-void unrecognized_char(char c);
-#define _DUPTEXT {yylval = strdup(yytext);}
+    #include <string.h>
+    #include "y.tab.h"
+    int cur_line = 1;
+    void yyerror(const char *msg);
+    void unrecognized_char(char c);
 %}
 
-/* note \042 is '"' */
-
 OPERATOR        ([-/+*()=,;])
-INTEGER         ([0-9]+)
-STRING          (\042[^\042\n]*\042)
-IDENTIFIER      ([_a-zA-Z][_a-zA-Z0-9]*)
+NUMBER          ([1-9][0-9]*)|0|([0-9]+\.[0-9]*)
+IDENTIFIER      ([a-z][_a-z0-9]*)
+FUNCTION        ([A-Z][_A-Z0-9]*)
 WHITESPACE      ([ \t]*)
-
+ASSIGNMENT      (":=")
 %%
 {OPERATOR}      { return yytext[0]; }
-"int"           { return T_Int; }
-"print"         { return T_Print; }
-
-{INTEGER}       { _DUPTEXT; return T_IntConstant; }
-{STRING}        { _DUPTEXT; return T_StringConstant; }
-{IDENTIFIER}    { _DUPTEXT; return T_Identifier; }
-
-{WHITESPACE}    { /* ignore every whitespace */ }
+{NUMBER}        { yylval.number = atoi(yytext); return T_NUMBER; }
+{IDENTIFIER}    { yylval.string = yytext; return T_VAR; }
+{FUNCTION}      { yylval.string = yytext; return T_FUNCTION; }
+{WHITESPACE}    {}
+{ASSIGNMENT}    { return T_ASSIGNMENT;}
 \n              { cur_line++; }
 .               { unrecognized_char(yytext[0]); }
 %%
@@ -42,4 +36,8 @@ void unrecognized_char(char c) {
 void yyerror(const char *msg) {
     printf("Error at line %d:\n\t%s\n", cur_line, msg);
     exit(-1);
+}
+
+int main() {
+    return yyparse();
 }

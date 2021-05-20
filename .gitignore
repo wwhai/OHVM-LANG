@@ -14,3 +14,5 @@ cmake-build-debug
 a.out
 *.tab.*
 *.yy.*
+.vscode
+build/

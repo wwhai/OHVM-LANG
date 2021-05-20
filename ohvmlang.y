@@ -3,10 +3,17 @@
 #include <stdlib.h>
 void yyerror(const char*);
 int yylex();
-#define YYSTYPE char *
 %}
 
-%token T_StringConstant T_IntConstant T_Identifier T_Int T_Print
+%union{
+    char *string;
+    double number;
+}
+
+%token <number> T_NUMBER
+%token <string> T_FUNCTION
+%token <string> T_VAR
+%token T_ASSIGNMENT
 
 %left '+' '-'
 %left '*' '/'
@@ -14,49 +21,34 @@ int yylex();
 
 %%
 
-S:
-    Stmt                        { /* empty */ }
-|   S Stmt                      { /* empty */ }
+Main:
+    Stmt          { }
+    |   Main Stmt { }
 ;
 
-Stmt:
-    VarDecl ';'                 { printf("\n\n"); }
-|   Assign                      { /* empty */ }
-|   Print                       { /* empty */ }
-;
-
-VarDecl:
-    T_Int T_Identifier          { printf("var %s", $2); }
-|   VarDecl ',' T_Identifier    { printf(", %s", $3); }
+Stmt: Assign { }
 ;
 
 Assign:
-    T_Identifier '=' E ';'      { printf("pop %s\n\n", $1); }
+    T_VAR T_ASSIGNMENT Factor ';'
+    | T_VAR T_ASSIGNMENT Function ';'
 ;
 
-Print:
-    T_Print '(' T_StringConstant Actuals ')' ';'
-                                { printf("print %s\n\n", $3); }
+Function:
+    T_FUNCTION '(' Factor ')' { printf("Function %s\n\n", $1); }
+;
+Factor: Expression
+  |'(' Expression ')'
 ;
 
-Actuals:
-    /* empty */                 { /* empty */ }
-|   Actuals ',' E               { /* empty */ }
-;
-
-E:
-    E '+' E                     { printf("add\n"); }
-|   E '-' E                     { printf("sub\n"); }
-|   E '*' E                     { printf("mul\n"); }
-|   E '/' E                     { printf("div\n"); }
-|   '-' E %prec U_neg           { printf("neg\n"); }
-|   T_IntConstant               { printf("push %s\n", $1); }
-|   T_Identifier                { printf("push %s\n", $1); }
-|   '(' E ')'                   { /* empty */ }
+Expression:
+    T_NUMBER '+' T_NUMBER                     { printf("=> %f\n", $1); }
+|   T_NUMBER '-' T_NUMBER                     { printf("=> %f\n", $1); }
+|   T_NUMBER '*' T_NUMBER                     { printf("=> %f\n", $1); }
+|   T_NUMBER '/' T_NUMBER                     { printf("=> %f\n", $1); }
+|   '-' T_NUMBER %prec U_neg           { printf("- %f\n", $2); }
+|   T_NUMBER                    { printf("Number %f\n", $1); }
+|   T_VAR                       { printf("Var %s\n", $1); }
 ;
 
 %%
-
-int main() {
-    return yyparse();
-}
