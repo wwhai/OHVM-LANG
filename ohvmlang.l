@@ -1,59 +1,40 @@
 %{
-    #include <string.h>
-    #include "y.tab.h"
-    int cur_line = 1;
-    void yyerror(const char *msg);
-    void unrecognized_char(char c);
-%}
+#include <stdlib.h>
+#include "node.h"
+#include "y.tab.h"
 
-OPERATOR        ([-/+*()=,;])
-NUMBER          ([1-9][0-9]*)|0|([0-9]+\.[0-9]*)
-VAR             ([a-z][_a-z0-9]*)
-FUNCTION        ([A-Z][_A-Z0-9]*)
-WHITESPACE      ([ \t]*)
-ASSIGNMENT      (":=")
-OUTPUT          (">:")
+void yyerror(char *);
+%}
+/*------------------------------------------------------------*/
 %%
-{OPERATOR}      { return yytext[0]; }
-{NUMBER}        { yylval.number = atoi(yytext); return T_NUMBER; }
-{VAR}           { yylval.string = yytext; return T_VAR; }
-{FUNCTION}      { yylval.string = yytext; return T_FUNCTION; }
-{WHITESPACE}    {}
-{ASSIGNMENT}    { return T_ASSIGNMENT;}
-{OUTPUT}        { return T_OUTPUT;}
-\n              { cur_line++; }
-.               { unrecognized_char(yytext[0]); }
+
+"/*"([^\*]|(\*)*[^\*/])*(\*)*"*/" {}
+
+"while"                { return WHILE; }
+"if"                   { return IF; }
+"else"                 { return ELSE; }
+"print"                { return PRINT; }
+"false"                { yylval.ivalue = 0; return INTEGER; }
+"true"                 { yylval.ivalue = 1; return INTEGER; }
+[a-z]                  { yylval.sindex = *yytext - 'a'; return VARIABLE; }
+[0-9]+                 { yylval.ivalue = atoi(yytext); return INTEGER; }
+[\+\-\*\/\(\)\%;{}=]   { return *yytext; }
+":="                   { return ASSIGN; }
+">="                   { return GE; }
+"<="                   { return LE; }
+">"                    { return GT; }
+"<"                    { return LT; }
+"=="                   { return EQ; }
+"!="                   { return NE; }
+"<>"                   { return NE; }
+"&&"                   { return AND; }
+"\|\|"                 { return OR; }
+"!"                    { return NOT; }
+[\t\n ]+               {}
+.                      { printf("unknown symbol, char: %c, ascii: %d\n", *yytext, (int)*yytext); }
+
 %%
 
 int yywrap(void) {
     return 1;
-}
-
-void unrecognized_char(char c) {
-    char buf[32] = "Unrecognized character: ?";
-    buf[24] = c;
-    yyerror(buf);
-}
-
-void yyerror(const char *msg) {
-    printf("Error at line %d:\n\t%s\n", cur_line, msg);
-    exit(-1);
-}
-//
-int main(int argc, char const *argv[])
-{
-    if(argc == 1){
-        printf("Help:\n  ohvmlang <filepath>\n");
-        return 0;
-    }
-    FILE* fp=fopen(argv[1], "r");
-	if(fp == NULL)
-	{
-		printf("cannot open %s\n", argv[1]);
-		return -1;
-	}
-	yyin=fp;
-	yyparse();
-	fclose(fp);
-	return 0;
 }

@@ -1,58 +1,248 @@
 %{
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
+#include "node.h"
+
+Node *opr(int name, int num, ...);
+
+Node *set_index(int value);
+Node *set_content(int value);
+
+void freeNode(Node *p);
+int execNode(Node *p);
+int yylexeNode();
 void yyerror(const char*);
 int yylex();
 extern FILE * yyin;
 extern FILE * yyout;
+
+int memory[26];
 %}
 
-%union{
-    char *string;
-    double number;
+%union {
+    int ivalue;
+    char sindex;
+    Node *nptr;
+};
+
+%token <ivalue> VARIABLE
+%token <sindex> INTEGER
+%token WHILE IF PRINT ASSIGN
+
+%nonassoc IFX
+%nonassoc ELSE
+
+%left AND OR GE LE EQ NE GT LT
+%left '+' '-'
+%left '*' '/' '%'
+
+%nonassoc UMINUS NOT
+%type <nptr> stmt expr stmt_list
+
+%%
+
+program:
+    function { exit(0); }
+    ;
+
+function:
+    function stmt { execNode($2); freeNode($2); }
+    | /* null statement. */
+    ;
+
+stmt:
+    ';' { $$ = opr(';', 2, NULL, NULL); }
+    | expr ';' { $$ = $1; }
+    | PRINT expr ';' { $$ = opr(PRINT, 1, $2); }
+    | VARIABLE ASSIGN expr ';' { $$ = opr(ASSIGN, 2, set_index($1), $3); }
+    | WHILE '(' expr ')' stmt { $$ = opr(WHILE, 2, $3, $5); }
+    | IF '(' expr ')' stmt %prec IFX { $$ = opr(IF, 2, $3, $5); }
+    | IF '(' expr ')' stmt ELSE stmt %prec ELSE { $$ = opr(IF, 3, $3, $5, $7); }
+    | '{' stmt_list '}' { $$ = $2; }
+    ;
+
+stmt_list:
+    stmt { $$ = $1; }
+    | stmt_list stmt { $$ = opr(';', 2, $2, $1); }
+    ;
+
+expr:
+    INTEGER { $$ = set_content($1); }
+    | VARIABLE { $$ = set_index($1); }
+    | expr '+' expr { $$ = opr('+', 2, $1, $3); }
+    | expr '-' expr { $$ = opr('-', 2, $1, $3); }
+    | expr '*' expr { $$ = opr('*', 2, $1, $3); }
+    | expr '/' expr { $$ = opr('/', 2, $1, $3); }
+    | expr '%' expr { $$ = opr('%', 2, $1, $3); }
+    | expr GT expr { $$ = opr(GT, 2, $1, $3); }
+    | expr GE expr { $$ = opr(GE, 2, $1, $3); }
+    | expr LE expr { $$ = opr(LE, 2, $1, $3); }
+    | expr LT expr { $$ = opr(LT, 2, $1, $3); }
+    | expr NE expr { $$ = opr(NE, 2, $1, $3); }
+    | expr EQ expr { $$ = opr(EQ, 2, $1, $3); }
+    | expr AND expr { $$ = opr(AND, 2, $1, $3); }
+    | expr OR expr { $$ = opr(OR, 2, $1, $3); }
+    | NOT expr %prec NOT { $$ = opr(NOT, 1, $2); }
+    | '-' expr %prec UMINUS { $$ = opr(UMINUS, 1, $2); }
+    | '(' expr ')' { $$ = $2; }
+    ;
+
+%%
+
+#define SIZE_OF_HEAD ((char *)&p->content-(char *)p)
+
+Node *set_content(int value)
+{
+    Node *p;
+    size_t nsize = SIZE_OF_HEAD + sizeof(int);
+    if((p = malloc(nsize)) == NULL) {
+        yyerror("out of memory @ set_content.\n");
+    }
+    p->type = TYPE_CONTENT;
+    p->content = value;
+
+    return p;
 }
 
-%token <number> T_NUMBER
-%token <string> T_FUNCTION
-%token <string> T_VAR
-%token T_ASSIGNMENT T_OUTPUT
+Node *set_index(int value)
+{
+    Node *p;
+    size_t nsize = SIZE_OF_HEAD + sizeof(int);
+    if((p = malloc(nsize)) == NULL) {
+        yyerror("out of memory @ set_index.\n");
+    }
+    p->type = TYPE_INDEX;
+    p->index = value;
 
-%left '+' '-'
-%left '*' '/'
-%right U_neg
+    return p;
+}
 
-%%
+Node *opr(int name, int num, ...)
+{
+    va_list ap;
+    Node *p;
+    size_t nsize = SIZE_OF_HEAD + sizeof(OpNode) + num * sizeof(Node *);
+    if((p = malloc(nsize)) == NULL) {
+        yyerror("out of memory @ opr.\n");
+    }
+    p->type = TYPE_OP;
+    p->op.name = name;
+    p->op.num = num;
+    va_start(ap, num);
+    int i = 0;
+    for(i = 0; i < num; ++i) {
+        p->op.node[i] = va_arg(ap, Node *);
+    }
+    va_end(ap);
+    p->op.node[num] = NULL;     // set the last node ptr as NULL.
+    return p;
+}
 
-Main:
-      Assign
-    | Main Assign
-    | OutPut
-    | Main OutPut
-;
+/**
+ * calculate the value of the node in syntax tree. 
+ * this is the core method to eval the syntax tree.
+ */
+int execNode(Node *p)
+{
+    if(!p) { return 0; }
+    switch (p->type) {
+    case TYPE_CONTENT: return p->content;
+    case TYPE_INDEX: return memory[p->index];
+    case TYPE_OP:
+        switch(p->op.name) {
+        case WHILE: 
+            while(execNode(p->op.node[0])) {
+                execNode(p->op.node[1]);
+            }
+            return 0;
+        case IF:
+            if(execNode(p->op.node[0])) {
+                execNode(p->op.node[1]);
+            }
+            else if(p->op.num > 2) {
+                execNode(p->op.node[2]);
+            }
+            return 0;
+        case PRINT:
+            printf("%d\n", execNode(p->op.node[0]));
+            return 0;
+        case ';':
+            execNode(p->op.node[0]);
+            return execNode(p->op.node[1]);
+        case ASSIGN:
+            return memory[p->op.node[0]->index] = execNode(p->op.node[1]);
+        case UMINUS:
+            return -execNode(p->op.node[0]);
+        case '+':
+            return execNode(p->op.node[0]) + execNode(p->op.node[1]);
+        case '-':
+            return execNode(p->op.node[0]) - execNode(p->op.node[1]);
+        case '*':
+            return execNode(p->op.node[0]) * execNode(p->op.node[1]);
+        case '/':
+            return execNode(p->op.node[0]) / execNode(p->op.node[1]);
+        case GE:
+            return execNode(p->op.node[0]) >= execNode(p->op.node[1]);
+        case GT:
+            return execNode(p->op.node[0]) > execNode(p->op.node[1]);
+        case LE:
+            return execNode(p->op.node[0]) <= execNode(p->op.node[1]);
+        case LT:
+            return execNode(p->op.node[0]) < execNode(p->op.node[1]);
+        case AND:
+            return execNode(p->op.node[0]) && execNode(p->op.node[1]);
+        case OR:
+            return execNode(p->op.node[0]) || execNode(p->op.node[1]);
+        case NOT:
+            return !execNode(p->op.node[0]);
+        case EQ:
+            return execNode(p->op.node[0]) == execNode(p->op.node[1]);
+        case NE:
+            return execNode(p->op.node[0]) != execNode(p->op.node[1]);
+        }
+    }
 
-OutPut:
-    T_OUTPUT T_VAR ';' { printf("OutPut %s\n\n", $2); }
-;
-Assign:
-      T_VAR T_ASSIGNMENT Factor ';'
-    | T_VAR T_ASSIGNMENT Function ';'
-;
+    return 0;
+}
 
-Function:
-      T_FUNCTION '(' Factor ')' { printf("Function %s\n\n", $1); }
-    | T_FUNCTION '(' Function ')' { printf("Function %s\n\n", $1); }
-;
-Factor:
-      Expression
-    |'(' Expression ')'
-;
-Expression:
-    T_NUMBER '+' T_NUMBER                     { printf("=> %f\n", $1); }
-|   T_NUMBER '-' T_NUMBER                     { printf("=> %f\n", $1); }
-|   T_NUMBER '*' T_NUMBER                     { printf("=> %f\n", $1); }
-|   T_NUMBER '/' T_NUMBER                     { printf("=> %f\n", $1); }
-|   '-' T_NUMBER %prec U_neg           { printf("- %f\n", $2); }
-|   T_NUMBER                    { printf("Number %f\n", $1); }
-|   T_VAR                       { printf("Var %s\n", $1); }
-;
-%%
+void freeNode(Node *p)
+{
+    if(!p) { return; }
+    if(p->type == TYPE_OP) {
+        int i = 0;
+        for(i = 0; i < p->op.num; ++i) {
+            freeNode(p->op.node[i]);
+        }
+    }
+    free(p);
+}
+
+void unrecognized_char(char c) {
+    char buf[32] = "Unrecognized character: ?";
+    buf[24] = c;
+    yyerror(buf);
+}
+
+void yyerror(const char *msg) {
+    printf("Error: %s\n", msg);
+    exit(-1);
+}
+//
+int main(int argc, char const *argv[])
+{
+    if(argc == 1){
+        printf("Help:\n  ohvmlang <filepath>\n");
+        return 0;
+    }
+    FILE* fp=fopen(argv[1], "r");
+    if(fp == NULL)
+    {
+        printf("cannot open %s\n", argv[1]);
+        return -1;
+    }
+    yyin=fp;
+    yyparse();
+    fclose(fp);
+    return 0;
+}
